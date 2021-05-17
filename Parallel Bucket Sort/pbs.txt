@@ -1,0 +1,177 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<time.h>
+#include<mpi.h>
+
+//Create temp arrays.
+void merge(int arr[], int l, int m, int r)
+{
+    int i,j,k;
+    int n1 = m -l +1;
+    int n2 = r - m;
+
+    int L[n1],R[n2];
+
+    for(i=0;i<n1;i++)
+        L[i]=arr[l+i];
+    for(j=0;j<n2;j++)
+        R[j]=arr[m+1+j];
+
+    i=0;
+    j=0;
+    k=l;
+    while(i<n1 && j<n2)
+    {
+        if(L[i]<=R[j])
+        {
+            arr[k]=L[i];
+            i++;
+        }
+        else
+        {
+            arr[k]=R[j];
+            j++;
+        }
+        k++;
+    }
+
+    while(i<n1)
+    {
+        arr[k]=L[i];
+        i++;
+        k++;
+    }
+
+    //Copy the remaining elements of R[], if there are any
+
+    while(j<n2)
+    {
+        arr[k]=R[j];
+        j++;
+        k++;
+    }
+}
+
+void mergeSort(int arr[], int l, int r)
+{
+    if(l<r)
+    {
+        int m = l + (r - l) / 2;
+        //Sort first and second halves
+        mergeSort(arr,l,m);
+        mergeSort(arr,m+1,r);
+
+        merge(arr,l,m,r);
+    }
+}
+
+void RandomNum(int *arr, int lower, int upper, int count)
+{
+
+    int i;
+    for(i=0;i<count;i++)
+    {
+        int num = (rand() % (upper - lower +1)) + lower;
+        arr[i] = num;
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    int rank,size;
+    int interval;
+    int number, start, end;
+    int proc;
+
+    int lower=0, upper=9999, count=20;
+    int data[count];
+    int counter = 0;
+    int i;
+    int *local_bucket;
+    int *proc_count;
+    int *displs;
+    int sorted_num[count];
+    MPI_Status status;
+    MPI_Init( &argc , &argv );
+    MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+    MPI_Comm_size( MPI_COMM_WORLD, &size );
+    if(rank==0)
+    {
+        srand(time(0));
+        RandomNum(data,lower,upper,count);
+        printf("---------DATA---------");
+        for(i=0;i<count;i++)
+        {
+            printf("%d\n",data[i]);
+        }
+        printf("\n");
+    }
+
+    MPI_Bcast(data, count, MPI_INT, 0, MPI_COMM_WORLD);
+
+    interval = (upper - lower +1)/(size);
+    start = (rank)*interval + lower;
+    end = start + interval - 1;
+    if(rank == (size-1))
+    {
+        end = upper;
+    }
+
+    printf("-------RANK %d: start %d, end %d\n", rank, start, end);
+
+    for(i=0;i<count;i++)
+    {
+        if(data[i] >= start && data[i] <= end)
+        {
+            counter+=1;
+        }
+    }
+    local_bucket = (int *)malloc(counter*sizeof(int));
+
+    counter = 0;
+    for(i=0;i< count;i++)
+    {
+        if(data[i] >= start && data[i] <= end)
+        {
+            local_bucket[counter] =  data[i];
+            counter += 1;
+        }
+    }
+
+    for(i=0;i < count;i++)
+    {
+        printf("%d\n",local_bucket[i]);
+    }
+    printf("\n");
+
+    mergeSort(local_bucket,0,counter - 1);
+
+    if(rank == 0)
+    {
+        proc_count = (int *)malloc(size*sizeof(int));
+        displs = (int *)malloc(size*sizeof(int));
+    }
+
+    MPI_Gather(&counter, 1, MPI_INT , proc_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    if(rank==0)
+    {
+        displs[0]=0;
+        for(i=0;i<size-1;i++)
+        {
+            displs[i+1] = displs[i] + proc_count[i];
+        }
+    }
+
+    MPI_Gatherv(local_bucket, counter, MPI_INT, sorted_num, proc_count, displs, MPI_INT, 0, MPI_COMM_WORLD);
+    if(rank == 0)
+    {
+        printf("------SORTED----");
+        for(i=0; i < count; i++)
+        {
+            printf("%d\n", sorted_num[i]);
+        }
+        printf("\n");
+    }
+    MPI_Finalize();
+}
